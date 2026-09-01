@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+package-lock.json
+*.log
+
+dist/
+build/
+
+*.db
+package-lock.json
