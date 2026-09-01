@@ -26,6 +26,15 @@ export function initDB(db) {
            id INTEGER PRIMARY KEY,
            timestamp DATETIME
          )`,
+        (err) => { if (err) return reject(err); }
+      );
+      // Stores the AI-generated review text per movie, keyed by TMDb movie id
+      db.run(
+        `CREATE TABLE IF NOT EXISTS reviews (
+           movie_id INTEGER PRIMARY KEY,
+           review TEXT,
+           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+         )`,
         (err) => {
           if (err) return reject(err);
           console.log('[DB] Tables ready.');
@@ -50,6 +59,31 @@ export function markMovieAsSent(db, movieId) {
     db.run('INSERT INTO movies (id) VALUES (?)', [movieId], (err) => {
       if (err) reject(err);
       else resolve();
+    });
+  });
+}
+
+/** Stores (or overwrites) the generated review text for a movie. */
+export function saveMovieReview(db, movieId, reviewText) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO reviews (movie_id, review) VALUES (?, ?)
+       ON CONFLICT(movie_id) DO UPDATE SET review = excluded.review, created_at = CURRENT_TIMESTAMP`,
+      [movieId, reviewText],
+      (err) => {
+        if (err) reject(err);
+        else resolve();
+      }
+    );
+  });
+}
+
+
+export function getMovieReview(db, movieId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT review FROM reviews WHERE movie_id = ?', [movieId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row ? row.review : null);
     });
   });
 }

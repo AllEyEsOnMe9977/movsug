@@ -6,7 +6,8 @@ export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 export const CHAT_ID = process.env.CHAT_ID;
 export const ADMIN_USER_ID = process.env.ADMIN_USER_ID ? Number(process.env.ADMIN_USER_ID) : null;
 export const OMDB_API_KEY = process.env.OMDB_API_KEY;
-
+export const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
+export const JINA_API_KEY = process.env.JINA_API_KEY;
 export const LANGUAGE = process.env.TMDB_LANGUAGE || 'en-US';
 export const REGION = process.env.TMDB_REGION || 'US';
 
@@ -26,7 +27,7 @@ export const TMDB_IMG_BASE = 'https://image.tmdb.org/t/p/w500';
 export const TELEGRAM_BASE = `https://api.telegram.org/bot${TOKEN}`;
 
 // Validate required environment variables immediately
-const REQUIRED_ENV = { TOKEN, TMDB_API_KEY, OPENAI_API_KEY, CHAT_ID, OMDB_API_KEY, ADMIN_USER_ID };
+const REQUIRED_ENV = { TOKEN, TMDB_API_KEY, OPENAI_API_KEY, CHAT_ID, OMDB_API_KEY, ADMIN_USER_ID, BRAVE_API_KEY, JINA_API_KEY };
 for (const [key, val] of Object.entries(REQUIRED_ENV)) {
   if (!val) {
     console.error(`[Config] Missing required environment variable: ${key}`);

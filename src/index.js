@@ -1,9 +1,9 @@
 import { 
   PRIORITY_YEARS, FALLBACK_YEARS, MAX_FETCH_ATTEMPTS, 
   MIN_IMDB_VOTES, MIN_IMDB_RATING, PRIO_IMDB_RATING,
-  ADMIN_USER_ID 
+  ADMIN_USER_ID, CHAT_ID 
 } from './config/env.js';
-
+import { processMovie } from './services/movieReview.js';
 import { openDB, initDB, isMovieSent, markMovieAsSent } from './db/database.js';
 import { fetchTotalPages, fetchMoviePage, fetchMovieDetails, fetchMovieByImdbId } from './services/tmdb.js';
 import { fetchOMDbRatings } from './services/omdb.js';
@@ -21,9 +21,36 @@ async function processAndSendMovie(db, movie, details, omdb) {
   const translatedOverview = await translateToPersian(movie.overview, details);
   const blocks = buildRichBlocks(movie, details, translatedOverview, omdb);
   
-  await sendRichMoviePost(movie, blocks);
+  // 1. Send the main movie details first
+  try {
+    await sendRichMoviePost(movie, blocks);
+    console.log(`[Post] Main details sent for ${movie.id}. Initiating review process...`);
+  } catch (err) {
+    // CRITICAL FAILURE: Main post didn't send. 
+    // We log the error and 'throw' to exit the function immediately. 
+    // The code will NEVER reach markMovieAsSent().
+    console.error(`[Post] Fatal error: Main details failed to send for ${movie.id}. Aborting.`, err.message);
+    throw err;
+  }
+
+  // 2. The Curveball Handler: Generate, save, and send the review
+  if (details.imdb_id) {
+    try {
+      await processMovie(details.imdb_id, movie.id, CHAT_ID, db);
+    } catch (err) {
+      // CURVEBALL CAUGHT: Review pipeline failed (Brave down, OpenAI rate limit, Jina blocked).
+      // We log the error, but we DO NOT throw. 
+      // This allows the function to continue because the main message was already sent successfully.
+      console.error(`[Post] Review generation/sending failed for ${movie.id}:`, err.message);
+    }
+  } else {
+    console.warn(`[Post] No IMDb ID found for movie ${movie.id}. Skipping review.`);
+  }
+
+  // 3. Mark as complete
+  // This is ONLY reached if Step 1 succeeded.
   await markMovieAsSent(db, movie.id);
-  console.log(`[Post] Movie ${movie.id} ("${movie.title}") marked as sent.`);
+  console.log(`[Post] Movie ${movie.id} ("${movie.title}") completely processed and marked as sent.`);
 }
 
 /**
