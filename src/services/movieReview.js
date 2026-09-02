@@ -145,7 +145,15 @@ async function generateTelegramReviewJson(imdbId, sources) {
 
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content ?? '{}';
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+
+    // Guardrail: OpenAI can occasionally omit required sections despite the schema prompt.
+    // Fail loudly here instead of caching a broken review or crashing deep in message building.
+    if (!parsed.spoilerFree || !parsed.spoilers) {
+        throw new Error(`OpenAI response missing required sections (spoilerFree/spoilers). Got keys: ${Object.keys(parsed).join(', ')}`);
+    }
+
+    return parsed;
 }
 
 function truncate(text, maxLength) {
@@ -271,7 +279,12 @@ export async function processMovie(imdbId, movieId, chatId, db) {
     if (cachedReviewText) {
         console.log(`\n[Cache] Found existing review for movie ID: ${movieId}. Skipping AI generation.`);
         try {
-            telegramReview = JSON.parse(cachedReviewText);
+            const parsed = JSON.parse(cachedReviewText);
+            if (parsed.spoilerFree && parsed.spoilers) {
+                telegramReview = parsed;
+            } else {
+                console.error(`[Cache] Cached review for movie ${movieId} missing required sections. Regenerating.`);
+            }
         } catch (err) {
             console.error('[Cache] Failed to parse cached review, falling back to fresh generation.', err);
         }

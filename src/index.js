@@ -49,7 +49,7 @@ async function processAndSendMovie(db, movie, details, omdb) {
 
   // 3. Mark as complete
   // This is ONLY reached if Step 1 succeeded.
-  await markMovieAsSent(db, movie.id);
+  await markMovieAsSent(db, movie, details, omdb);
   console.log(`[Post] Movie ${movie.id} ("${movie.title}") completely processed and marked as sent.`);
 }
 
