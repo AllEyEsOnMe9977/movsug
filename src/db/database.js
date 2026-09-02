@@ -32,6 +32,8 @@ export async function initDB(db) {
        imdb_id VARCHAR(20),
        imdb_rating DECIMAL(3,1),
        imdb_votes INT,
+       rotten_tomatoes VARCHAR(20),
+       metacritic VARCHAR(20),
        genres JSON,
        runtime INT,
        sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -64,8 +66,8 @@ export async function markMovieAsSent(db, movie, details, omdb) {
     `INSERT INTO movies (
        id, title, original_title, overview, release_date,
        poster_path, backdrop_path, vote_average,
-       imdb_id, imdb_rating, imdb_votes, genres, runtime
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       imdb_id, imdb_rating, imdb_votes, rotten_tomatoes, metacritic, genres, runtime
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       movie.id,
       movie.title,
@@ -78,6 +80,8 @@ export async function markMovieAsSent(db, movie, details, omdb) {
       details.imdb_id || null,
       omdb?.imdbRating ?? null,
       omdb?.imdbVotes ?? null,
+      omdb?.rottenTomatoes ?? null,
+      omdb?.metacritic ?? null,
       details.genres ? JSON.stringify(details.genres.map((g) => g.name)) : null,
       details.runtime ?? null,
     ]
@@ -96,4 +100,68 @@ export async function saveMovieReview(db, movieId, reviewText) {
 export async function getMovieReview(db, movieId) {
   const [rows] = await db.query('SELECT review FROM reviews WHERE movie_id = ?', [movieId]);
   return rows.length ? rows[0].review : null;
+}
+
+/** Returns all movie IDs in `movies` that still have no metadata (old pre-tracking rows). */
+export async function getMoviesMissingMetadata(db) {
+  const [rows] = await db.query('SELECT id FROM movies WHERE title IS NULL');
+  return rows.map((r) => r.id);
+}
+
+/** Returns all movie IDs in `movies` that have no matching row in `reviews` yet. */
+export async function getMoviesMissingReviews(db) {
+  const [rows] = await db.query(
+    `SELECT m.id, m.imdb_id FROM movies m
+     LEFT JOIN reviews r ON m.id = r.movie_id
+     WHERE r.movie_id IS NULL`
+  );
+  return rows;
+}
+
+/** Returns movies that have metadata but are missing RT/Metacritic specifically (post-upgrade gap). */
+export async function getMoviesMissingRatings(db) {
+  const [rows] = await db.query(
+    `SELECT id, imdb_id FROM movies
+     WHERE title IS NOT NULL
+       AND imdb_id IS NOT NULL
+       AND rotten_tomatoes IS NULL
+       AND metacritic IS NULL`
+  );
+  return rows;
+}
+
+/** Updates only the RT/Metacritic columns for a movie (used for the one-off ratings-gap fix). */
+export async function updateMovieRatings(db, movieId, omdb) {
+  await db.query(
+    'UPDATE movies SET rotten_tomatoes = ?, metacritic = ? WHERE id = ?',
+    [omdb?.rottenTomatoes ?? null, omdb?.metacritic ?? null, movieId]
+  );
+}
+
+/** Updates an existing movie row with full metadata (used by the backfill script). */
+export async function updateMovieMetadata(db, movie, details, omdb) {
+  await db.query(
+    `UPDATE movies SET
+       title = ?, original_title = ?, overview = ?, release_date = ?,
+       poster_path = ?, backdrop_path = ?, vote_average = ?,
+       imdb_id = ?, imdb_rating = ?, imdb_votes = ?, rotten_tomatoes = ?, metacritic = ?, genres = ?, runtime = ?
+     WHERE id = ?`,
+    [
+      movie.title,
+      movie.original_title,
+      movie.overview,
+      movie.release_date || null,
+      movie.poster_path,
+      movie.backdrop_path,
+      movie.vote_average,
+      details.imdb_id || null,
+      omdb?.imdbRating ?? null,
+      omdb?.imdbVotes ?? null,
+      omdb?.rottenTomatoes ?? null,
+      omdb?.metacritic ?? null,
+      details.genres ? JSON.stringify(details.genres.map((g) => g.name)) : null,
+      details.runtime ?? null,
+      movie.id,
+    ]
+  );
 }
