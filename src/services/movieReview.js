@@ -337,6 +337,8 @@ export async function processMovie(imdbId, movieId, chatId, db) {
 
     if (!telegramResult.ok) {
         console.error(`Telegram API rejected the message: ${telegramResult.description}`);
+    } else {
+        console.log(`[Review] Review message sent successfully for movie ID: ${movieId}.`);
     }
 
     return { imdbId, review: telegramReview, telegramResult };

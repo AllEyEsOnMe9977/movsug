@@ -26,31 +26,25 @@ async function processAndSendMovie(db, movie, details, omdb) {
     await sendRichMoviePost(movie, blocks);
     console.log(`[Post] Main details sent for ${movie.id}. Initiating review process...`);
   } catch (err) {
-    // CRITICAL FAILURE: Main post didn't send. 
-    // We log the error and 'throw' to exit the function immediately. 
-    // The code will NEVER reach markMovieAsSent().
     console.error(`[Post] Fatal error: Main details failed to send for ${movie.id}. Aborting.`, err.message);
     throw err;
   }
 
-  // 2. The Curveball Handler: Generate, save, and send the review
+  // 2. Mark as sent immediately — must happen before the review step,
+  // since `reviews.movie_id` now has a foreign key referencing `movies.id`.
+  await markMovieAsSent(db, movie, details, omdb);
+  console.log(`[Post] Movie ${movie.id} ("${movie.title}") recorded in database.`);
+
+  // 3. The Curveball Handler: Generate, save, and send the review
   if (details.imdb_id) {
     try {
       await processMovie(details.imdb_id, movie.id, CHAT_ID, db);
     } catch (err) {
-      // CURVEBALL CAUGHT: Review pipeline failed (Brave down, OpenAI rate limit, Jina blocked).
-      // We log the error, but we DO NOT throw. 
-      // This allows the function to continue because the main message was already sent successfully.
       console.error(`[Post] Review generation/sending failed for ${movie.id}:`, err.message);
     }
   } else {
     console.warn(`[Post] No IMDb ID found for movie ${movie.id}. Skipping review.`);
   }
-
-  // 3. Mark as complete
-  // This is ONLY reached if Step 1 succeeded.
-  await markMovieAsSent(db, movie, details, omdb);
-  console.log(`[Post] Movie ${movie.id} ("${movie.title}") completely processed and marked as sent.`);
 }
 
 /**
