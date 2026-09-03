@@ -28,6 +28,7 @@ export async function initDB(db) {
        release_date DATE,
        poster_path VARCHAR(255),
        backdrop_path VARCHAR(255),
+       trailer_key VARCHAR(20),
        vote_average DECIMAL(3,1),
        imdb_id VARCHAR(20),
        imdb_rating DECIMAL(3,1),
@@ -66,8 +67,8 @@ export async function markMovieAsSent(db, movie, details, omdb) {
     `INSERT INTO movies (
        id, title, original_title, overview, release_date,
        poster_path, backdrop_path, vote_average,
-       imdb_id, imdb_rating, imdb_votes, rotten_tomatoes, metacritic, genres, runtime
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       imdb_id, imdb_rating, imdb_votes, rotten_tomatoes, metacritic, genres, runtime, trailer_key
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       movie.id,
       movie.title,
@@ -84,6 +85,7 @@ export async function markMovieAsSent(db, movie, details, omdb) {
       omdb?.metacritic ?? null,
       details.genres ? JSON.stringify(details.genres.map((g) => g.name)) : null,
       details.runtime ?? null,
+      details.videos?.results?.find((v) => v.type === 'Trailer' && v.site === 'YouTube')?.key ?? null,
     ]
   );
 }
@@ -138,13 +140,18 @@ export async function updateMovieRatings(db, movieId, omdb) {
   );
 }
 
+/** Updates only the trailer_key column for a movie (used by the daily backfill's self-heal path). */
+export async function updateMovieTrailer(db, movieId, trailerKey) {
+  await db.query('UPDATE movies SET trailer_key = ? WHERE id = ?', [trailerKey, movieId]);
+}
+
 /** Updates an existing movie row with full metadata (used by the backfill script). */
 export async function updateMovieMetadata(db, movie, details, omdb) {
   await db.query(
     `UPDATE movies SET
        title = ?, original_title = ?, overview = ?, release_date = ?,
        poster_path = ?, backdrop_path = ?, vote_average = ?,
-       imdb_id = ?, imdb_rating = ?, imdb_votes = ?, rotten_tomatoes = ?, metacritic = ?, genres = ?, runtime = ?
+       imdb_id = ?, imdb_rating = ?, imdb_votes = ?, rotten_tomatoes = ?, metacritic = ?, genres = ?, runtime = ?, trailer_key = ?
      WHERE id = ?`,
     [
       movie.title,
@@ -161,7 +168,29 @@ export async function updateMovieMetadata(db, movie, details, omdb) {
       omdb?.metacritic ?? null,
       details.genres ? JSON.stringify(details.genres.map((g) => g.name)) : null,
       details.runtime ?? null,
+      details.videos?.results?.find((v) => v.type === 'Trailer' && v.site === 'YouTube')?.key ?? null,
       movie.id,
     ]
   );
+}
+
+/**
+ * Returns up to `limit` movies that are missing metadata, RT/Metacritic, and/or a review.
+ * Used by the daily cron job — one query covering all three gaps at once.
+ */
+export async function getMoviesNeedingAnyBackfill(db, limit) {
+  const [rows] = await db.query(
+    `SELECT m.id, m.imdb_id, m.title, m.rotten_tomatoes, m.metacritic, m.trailer_key,
+            (r.movie_id IS NOT NULL) AS has_review
+     FROM movies m
+     LEFT JOIN reviews r ON m.id = r.movie_id
+     WHERE m.title IS NULL
+        OR (m.rotten_tomatoes IS NULL AND m.metacritic IS NULL)
+        OR m.trailer_key IS NULL
+        OR r.movie_id IS NULL
+     ORDER BY m.id
+     LIMIT ?`,
+    [limit]
+  );
+  return rows;
 }
